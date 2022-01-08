@@ -30,7 +30,7 @@ You can resize the image and add a text watermark to the image by Python pillow.
 ```
 
 - 操作 Operation  
-	1. 設定ファイル(settings_img_conv.py)の編集  
+	- 設定ファイル(settings_img_conv.py)の編集  
 		Edit configuration file(settings_img_conv.py)  
 		- 画像の幅、高さ、上書き指定、Exif情報の扱い、透かし文字列、フォントファイル名、フォントサイズ、文字色、縁取りの色、縁取りの幅、右下からの隙間を指定  
 			Specify image width, height, overwrite specification, Exif information handling, watermark character string, font file name, font size, text color, border color, border width, gap from the lower right  
