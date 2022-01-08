@@ -28,6 +28,7 @@ You can resize the image and add a text watermark to the image by Python pillow.
 ```dosbatch
 	image_resize_sig.exe
 ```
+またはimage_resize_sig.exeのアイコンに表示したいファイルをドラッグ＆ドロップします
 
 - 操作 Operation  
 	- 設定ファイル(settings_img_conv.py)の編集  
