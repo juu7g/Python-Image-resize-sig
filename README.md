@@ -17,6 +17,8 @@ You can resize the image and add a text watermark to the image by Python pillow.
 	You can choose to keep or erase Exif information
 - 画像に文字で透かしを付加できます  
 	You can add a watermark to the image with text
+- 画像の回転、ミラー反転ができます(1.0.1)  
+	Images can be rotated and mirrored  
 
 ## 依存関係 Requirement
 
@@ -26,7 +28,7 @@ You can resize the image and add a text watermark to the image by Python pillow.
 ## 使い方 Usage
 
 ```dosbatch
-	image_resize_sig.exe
+image_resize_sig.exe
 ```
 またはimage_resize_sig.exeのアイコンに変換したいファイルをドラッグ＆ドロップします
 
