@@ -1,7 +1,7 @@
 """
 文字透かし付き画像サイズ変更ツール
 """
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 from tkinter import filedialog
 import tkinter as tk
 import os, sys, pathlib
@@ -89,13 +89,14 @@ class ImageConversion:
             str:        作成したフォルダのパス
         """
         p = pathlib.Path(target_path)
-        if not p.is_absolute():
+        if not os.path.isabs(p):    # is_absolute()は\\で始まるパスは相対と判断するのでしないisabs()を使用
             p = pathlib.Path(base_path + "\\" + target_path)
         if not p.exists():
             p.mkdir()
         return str(p)
 
-    def set_watermark_by_str(self, img:Image, water_mark:str, size:int, font_name:str, padx:int, pady:int, kwarges):
+    def set_watermark_by_str(self, img:Image, water_mark:str, size:int
+                            , font_name:str, padx:int, pady:int, kwarges) -> str:
         """
         透かしを文字で入れる
         Args:
@@ -106,14 +107,20 @@ class ImageConversion:
             int:        画像の右下からの移動距離(水平方向)
             int:        画像の右下からの移動距離(垂直方向)
             dict:       キーワードオプション
+        Returns:
+            str:        エラーメッセージ
         """
+        err_msg = ""
         sig = water_mark
         draw_img = ImageDraw.Draw(img)
         try:
             font = ImageFont.truetype(font_name, size) # フォント名とサイズ(px)
         except:
-            print(f"【エラー】フォントファイル名を確認してください({font_name})")
-            sys.exit()
+            err_msg = f"【エラー】フォントファイル名を確認してください({font_name})"
+            print(err_msg)
+            return err_msg
+            # sys.exit()
+
         # 透かし文字列の大きさを取得し、文字の出力位置を求める
         sig_size = font.getsize(sig)
         sig_nw = (img.size[0] - sig_size[0] - padx, img.size[1] - sig_size[1] - pady)
@@ -121,20 +128,34 @@ class ImageConversion:
             draw_img.text(sig_nw, sig, font=font, **kwarges)
         except:
             # フォントによってはエラーが出る
-            print("【エラー】透かしが書けませんでした。フォントを変更してみてください。")
+            err_msg = "【エラー】透かしが書けませんでした。フォント、色を変更してみてください。"
+            print(err_msg)
+
+        return err_msg
 
 class ImageUI:
     """
     画像変換クラスを使用して画像変換する操作クラス
     """
-    def resize_image_from_dialog_or_args(self):
+    def convert_image_from_dialog_or_args(self, book:dict, paths:list=None) -> set:
         """
-        画像変換
-        コマンドライ引数かファイルダイアログから画像を指定して画像のサイズ変更を行う。
+        画像変換(リサイズ、回転、反転、Exif除去、透かし)
+        コマンドライ引数かファイルダイアログから画像を指定して画像の変更を行い保存する。
         指定により文字透かしを描画する
+        Args:
+            dict:   設定項目
+            list:   画像のパスのリスト
+        Returns:
+            set:    変換後の画像のパスのセット
+            str:    エラーメッセージ
         """
+        output_paths = set()    # 出力したファイルパスの集合、戻り値とする
+        err_msg = ""
+
         # コマンドライン引数からドラッグ＆ドロップされたファイル情報を取得
-        if len(sys.argv) > 1:
+        if paths:
+            file_paths = paths
+        elif len(sys.argv) > 1:
             file_paths = tuple(sys.argv[1:])
         else:
             # 画像を指定
@@ -144,13 +165,16 @@ class ImageUI:
                 filetypes=[("画像", ".png .jpg .gif .webp"), ("PNG", ".png"), ("JPEG", ".jpg"), ("GIF", ".gif"), ("WebP", ".webp"), ("すべて", "*")])
 
         if len(file_paths) == 0:
-            sys.exit()
+            err_msg = f"【エラー】対象のファイルがありません"
+            print(err_msg)
+            return output_paths, err_msg
+            # sys.exit()
 
         dst_img = None
         save_kwarg = {}
         img_conv = ImageConversion()    # インスタンス作成
         # 保存先がなかったら作成
-        dst_path = img_conv.make_dir(settings_img_conv.dest_path, os.path.dirname(file_paths[0]))
+        dst_path = img_conv.make_dir(book.get("dest_path"), os.path.dirname(file_paths[0]))
         print(f"\n◆保存先「{dst_path}」に")
 
         for file_name in file_paths:
@@ -159,37 +183,73 @@ class ImageUI:
             if not img: continue    # Imageオブジェクトが作られていなかったらスキップ
 
             # Exif情報を書き込む場合、読んだ画像のExif情報を保存時に設定
-            if settings_img_conv.exif:
+            if book.get("exif"):
                 save_kwarg["exif"] = img.getexif()
             else:
                 save_kwarg["exif"] = bytes(b"") 
                 # JPEGはオプションなしかこの指定でないとExif無しにできない
                 # PNGはオプションなしだとExifを出力するのでNoneかこの指定。
             
+            # はじめに画像を出力用にコピーしておく
+            dst_img = img.copy()
+
+            # 回転      回転は最初に実施、サイズ変更は回転されたものに施すイメージで指定されるから
+            if book.get("rotate90"):    # 左回転
+                dst_img = dst_img.rotate(90, expand=True)
+            if book.get("rotate270"):   # 右回転
+                dst_img = dst_img.rotate(270, expand=True)
+
             # リサイズの幅が指定されていたらその幅に、高さが指定されていたらその高さに
-            if settings_img_conv.width != 0:
-                dst_img = img_conv.scale_to_width(img, settings_img_conv.width)
-                name_suffix = f"_w{settings_img_conv.width}" 
-            elif settings_img_conv.height != 0:
-                dst_img = img_conv.scale_to_height(img, settings_img_conv.height)
-                name_suffix = f"_h{settings_img_conv.height}" 
+            if not book.get("do_resize", True):   # リサイズしない場合はコピー、追加した設定値なので存在しない場合はTrue
+                name_suffix = "_c" 
+            elif book.get("width") != 0:
+                dst_img = img_conv.scale_to_width(dst_img, book.get("width"))
+                name_suffix = f"_w{book.get('width')}" 
+            elif book.get("height") != 0:
+                dst_img = img_conv.scale_to_height(dst_img, book.get("height"))
+                name_suffix = f"_h{book.get('height')}" 
+            
+            # ミラー反転
+            if book.get("mirror"):
+                dst_img = ImageOps.mirror(dst_img)
 
             # 透かし
-            if settings_img_conv.water_mark:
-                kwargs = {"fill":settings_img_conv.wm_f_color,
-                            "stroke_width":settings_img_conv.wm_stroke,
-                            "stroke_fill":settings_img_conv.wm_b_color}
-                img_conv.set_watermark_by_str(dst_img, settings_img_conv.water_mark,
-                                                settings_img_conv.wm_size,
-                                                settings_img_conv.wm_font_name,
-                                                settings_img_conv.wm_padx,
-                                                settings_img_conv.wm_pady, kwargs)
+            if book.get("is_water_mark"):
+                kwargs = {"fill":book.get("wm_f_color"),
+                            "stroke_width":book.get("wm_stroke"),
+                            "stroke_fill":book.get("wm_b_color")}
+                wm_err = img_conv.set_watermark_by_str(dst_img, book.get("water_mark"),
+                                                book.get("wm_size"),
+                                                book.get("wm_font_name"),
+                                                book.get("wm_padx"),
+                                                book.get("wm_pady"), kwargs)
+                if wm_err:
+                    err_msg = wm_err
 
             # 画像を保存    
             if dst_img:
                 new_path = img_conv.save_image(
-                    dst_img, file_name, name_suffix, dst_path, overwrite=settings_img_conv.overwrite, **save_kwarg)
+                    dst_img, file_name, name_suffix, dst_path, overwrite=book.get("overwrite"), **save_kwarg)
                 print(f"「{os.path.basename(new_path)}」を保存。サイズ {img.size} ⇒ {dst_img.size}")
+            
+            # 出力したファイルパスを保存
+            output_paths.add(new_path)
+
+        return output_paths, err_msg
+
+def get_book_variable_module_name(module_name:str) -> dict:
+    """
+    モジュールから変数定義を取得し辞書で返す
+        Args:
+            str:    モジュール名
+        Returns:
+            dict:   変数定義の辞書
+    """
+    module = globals().get(module_name, None)
+    book = {}
+    if module:
+        book = {key: value for key, value in module.__dict__.items() if not (key.startswith('__') or key.startswith('_'))}
+    return book
 
 if __name__ == "__main__":
     print(f"画像の幅:{settings_img_conv.width}, 高さ:{settings_img_conv.height}, 保存先:{settings_img_conv.dest_path}")
@@ -201,8 +261,13 @@ if __name__ == "__main__":
     yes_or_no = input("\n上の設定値で実行しますか？(y/n)")
     if yes_or_no != "y":
         print("setting_img_conv.pyファイルを修正保存してから実行してください")
-        input("\n確認したら何かキーを押してください")
+        input("\n確認したらEnterキーを押してください")
         sys.exit()
 
-    ImageUI().resize_image_from_dialog_or_args()
-    input("\n確認したら何かキーを押してください")
+    book = get_book_variable_module_name("settings_img_conv")
+    # tomlにis_water_markを追加したことに合わせた対応 water_markに何か設定されていたらtrueとする
+    is_water_mark = bool(book.get("water_mark"))
+    book["is_water_mark"] = is_water_mark
+
+    ImageUI().convert_image_from_dialog_or_args(book)
+    input("\n確認したらEnterキーを押してください")
